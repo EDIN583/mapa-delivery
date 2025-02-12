@@ -1,0 +1,141 @@
+ <!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa de Entrega</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+</head>
+<body>
+    <div id="map" style="height: 100vh;"></div>
+
+    <script>
+        var map = L.map('map').setView([10.9639, -74.7963], 13);
+
+        // Establecer límites de la vista (Barranquilla y Soledad)
+        var bounds = L.latLngBounds(
+            [10.9200, -74.8500], // Esquina suroeste (Soledad)
+            [11.0200, -74.7200]  // Esquina noreste (Barranquilla)
+        );
+        map.setMaxBounds(bounds);
+        map.on('drag', function () {
+            map.panInsideBounds(bounds, { animate: false });
+        });
+
+        // Cargar mapa de OpenStreetMap
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        var markerA, markerB, routeLine;
+
+        // Función para actualizar el mapa con los puntos A y B
+        function actualizarMapa(latA, lonA, latB, lonB) {
+            if (markerA) map.removeLayer(markerA);
+            if (markerB) map.removeLayer(markerB);
+            if (routeLine) map.removeLayer(routeLine);
+
+            // Agregar marcador de recogida (Punto A)
+            markerA = L.marker([latA, lonA]).addTo(map)
+                .bindPopup("📍 Punto de Recogida (A)").openPopup();
+
+            // Agregar marcador de entrega (Punto B)
+            markerB = L.marker([latB, lonB]).addTo(map)
+                .bindPopup("📍 Punto de Entrega (B)").openPopup();
+
+            // Dibujar línea entre los puntos
+            routeLine = L.polyline([[latA, lonA], [latB, lonB]], { color: 'blue', weight: 4 }).addTo(map);
+
+            // Calcular distancia y costo
+            calcularDistancia(latA, lonA, latB, lonB);
+        }
+
+        // Función para calcular distancia y costo
+        function calcularDistancia(latA, lonA, latB, lonB) {
+            var osrmURL = `https://router.project-osrm.org/route/v1/driving/${lonA},${latA};${lonB},${latB}?overview=full&geometries=geojson`;
+
+            fetch(osrmURL)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.routes.length > 0) {
+                        var route = data.routes[0];
+
+                        // Obtener la distancia en kilómetros
+                        var distancia = route.distance / 1000;
+
+                        // Calcular el costo con la nueva regla
+                        var costo;
+                        if (distancia <= 2) {
+                            costo = 4000;
+                        } else {
+                            var kmExtra = Math.floor(distancia - 2);  // Kilómetros adicionales completos
+                            var metrosExtra = (distancia - 2 - kmExtra) * 1000;  // Metros adicionales
+
+                            var costoExtraKm = kmExtra * 1200;
+                            var costoExtraMetros = Math.floor(metrosExtra / 100) * 120;
+
+                            costo = 4000 + costoExtraKm + costoExtraMetros;
+                        }
+
+                        costo = Math.round(costo); // Redondear el costo final
+
+                        // Dibujar la ruta en el mapa
+                        if (routeLine) map.removeLayer(routeLine);
+                        routeLine = L.geoJSON(route.geometry, { color: 'blue', weight: 4 }).addTo(map);
+
+                        // Enviar la distancia y el costo a App Inventor
+                        AppInventor.setWebViewString(distancia.toFixed(2) + "|" + costo);
+
+                        // Mostrar la distancia y costo en el mapa
+                        L.popup()
+                            .setLatLng([(latA + latB) / 2, (lonA + lonB) / 2]) // Centrar popup
+                            .setContent(`📏 Distancia: ${distancia.toFixed(2)} km <br> 💰 Costo: ${costo} COP`)
+                            .openOn(map);
+                    } else {
+                        alert("No se pudo calcular la ruta.");
+                    }
+                })
+                .catch(error => console.error("Error al calcular la ruta:", error));
+        }
+
+        // Función para convertir direcciones en coordenadas con Nominatim
+        function obtenerCoordenadas(direccion, callback) {
+            var url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccion)}`;
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.length > 0) {
+                        var lat = parseFloat(data[0].lat);
+                        var lon = parseFloat(data[0].lon);
+                        callback(lat, lon);
+                    } else {
+                        alert("Dirección no encontrada: " + direccion);
+                    }
+                })
+                .catch(error => console.error("Error al obtener coordenadas:", error));
+        }
+
+        // Recibir datos desde App Inventor
+        function recibirDatosDesdeAppInventor(url) {
+            var params = new URLSearchParams(url.split("?")[1]);
+            var direccionA = params.get("recogida");
+            var direccionB = params.get("entrega");
+
+            // Obtener coordenadas de ambas direcciones antes de actualizar el mapa
+            obtenerCoordenadas(direccionA, function(latA, lonA) {
+                obtenerCoordenadas(direccionB, function(latB, lonB) {
+                    actualizarMapa(latA, lonA, latB, lonB);
+                });
+            });
+        }
+
+        // Leer parámetros de la URL al cargar la página
+        var urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has("recogida") && urlParams.has("entrega")) {
+            recibirDatosDesdeAppInventor(window.location.href);
+        }
+    </script>
+</body>
+</html>
