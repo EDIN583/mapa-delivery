@@ -117,25 +117,21 @@
                 .catch(error => console.error("Error al obtener coordenadas:", error));
         }
 
-        // Recibir datos desde App Inventor
-        function recibirDatosDesdeAppInventor(url) {
-            var params = new URLSearchParams(url.split("?")[1]);
-            var direccionA = params.get("recogida");
-            var direccionB = params.get("entrega");
+        // 🔹 NUEVO: Recibir datos desde App Inventor con WebViewString
+        setInterval(() => {
+            let datos = window.AppInventor?.getWebViewString();
+            if (datos && datos.includes("|")) {
+                let [direccionA, direccionB] = datos.split("|");
 
-            // Obtener coordenadas de ambas direcciones antes de actualizar el mapa
-            obtenerCoordenadas(direccionA, function(latA, lonA) {
-                obtenerCoordenadas(direccionB, function(latB, lonB) {
-                    actualizarMapa(latA, lonA, latB, lonB);
+                obtenerCoordenadas(direccionA, function(latA, lonA) {
+                    obtenerCoordenadas(direccionB, function(latB, lonB) {
+                        actualizarMapa(latA, lonA, latB, lonB);
+                    });
                 });
-            });
-        }
+            }
+        }, 2000);
 
-        // Leer parámetros de la URL al cargar la página
-        var urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has("recogida") && urlParams.has("entrega")) {
-            recibirDatosDesdeAppInventor(window.location.href);
-        }
     </script>
 </body>
 </html>
+
